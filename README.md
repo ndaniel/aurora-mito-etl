@@ -31,7 +31,7 @@ cd aurora-mito-etl
 ### 2. Download data
 
 ```bash
-bash scripts/get.sh
+bash scripts/run_pipeline.sh
 ```
 
 This downloads and verifies:
