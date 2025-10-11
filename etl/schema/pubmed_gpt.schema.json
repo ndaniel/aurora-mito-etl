@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PubMed LLM classification (staging)",
+  "type": "object",
+  "properties": {
+    "pmid": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "YES",
+        "probablyYES",
+        "NO"
+      ]
+    },
+    "compound": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "pmid",
+    "confidence",
+    "compound"
+  ],
+  "additionalProperties": false
+}

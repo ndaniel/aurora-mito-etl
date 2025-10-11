@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "All MCI inhibitors summary (processed, aggregated by compound)",
+  "type": "object",
+  "properties": {
+    "compound": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pubmed_references": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "known_status": {
+      "type": "string",
+      "enum": [
+        "known",
+        "new"
+      ]
+    }
+  },
+  "required": [
+    "compound",
+    "pubmed_references",
+    "known_status"
+  ],
+  "additionalProperties": false
+}

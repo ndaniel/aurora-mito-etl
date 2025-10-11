@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeSH bioactive terms (staging)",
+  "type": "object",
+  "properties": {
+    "Type": {
+      "type": "string",
+      "enum": [
+        "Descriptor",
+        "SCR"
+      ]
+    },
+    "MeSH_UI": {
+      "type": "string",
+      "pattern": "^(D|C)[0-9]+$"
+    },
+    "Name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "OneTreeNumber": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "Type",
+    "MeSH_UI",
+    "Name",
+    "OneTreeNumber"
+  ],
+  "additionalProperties": false
+}

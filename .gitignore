@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Streamlit cache
+.streamlit/
+.cache/
+
+# OS
+.DS_Store
+
+*~
+
+# Always keep GitHub workflows
+!.github/
+
+# Logs and temp
+logs/
+*.log
+
+# Data folders: ignore contents, keep structure
+data/raw/*
+data/staging/*
+data/processed/*
+data/curated/*
+data/metadata/*
+
+# Keep the directory placeholders
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+!data/metadata/.gitkeep
+
+# Common large data formats
+*.xml
+*.xml.gz
+*.gz
+*.csv
+*.tsv
+*.parquet
+*.zip
+*.tar
+*.tar.gz
+*.gz
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*.ipynb~
+
+# OS
+.DS_Store
+Thumbs.db
+
+

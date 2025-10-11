@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PubTator chemical mentions (staging, filtered)",
+  "type": "object",
+  "properties": {
+    "pmid": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "mention": {
+      "type": "string",
+      "minLength": 1
+    },
+    "normalized_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "pmid",
+    "mention",
+    "normalized_id"
+  ],
+  "additionalProperties": false
+}
