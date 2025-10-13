@@ -15,6 +15,7 @@ import re
 import hashlib
 import datetime as _dt
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 # --------------------------------------------------------------------------
@@ -175,9 +176,11 @@ df["_compound_norm"] = df["compound"].str.lower()
 
 stats = (
     df.groupby("_compound_norm", as_index=False)
-      .agg(pubmed_references=("pmid", "nunique"),
-           compound=("compound", "first"))
-      [["compound", "pubmed_references"]]
+      .agg(
+          pubmed_references=("pmid", "nunique"),
+          compound=("compound", "first"),
+          pubmed_ids=("pmid", lambda x: ";".join(map(str, sorted(set(x)))))
+      )[["compound", "pubmed_references", "pubmed_ids"]]
       .sort_values(["pubmed_references", "compound"], ascending=[False, True])
       .reset_index(drop=True)
 )
@@ -189,11 +192,21 @@ stats["known_status"] = "new"
 known_df = pd.DataFrame({
     "compound": ref,
     "pubmed_references": [100] * len(ref),
+    "pubmed_ids": "",
     "known_status": ["known"] * len(ref),
 })
 
 # Concatenate both
 stats = pd.concat([stats, known_df], ignore_index=True)
+
+stats["confidence"] = pd.cut(
+    stats["pubmed_references"],
+    bins=[-np.inf, 1, 2, 5, np.inf],
+    labels=["low", "low-medium", "medium", "high"]
+)
+
+stats = stats[["compound", "pubmed_references", "known_status", "confidence", "pubmed_ids"]]
+
 
 # Final sort
 stats = stats.sort_values(["pubmed_references", "compound"], ascending=[False, True]).reset_index(drop=True)
@@ -213,12 +226,48 @@ common_params = {
 }
 
 # Append provenance for each artifact
-append_release_info(OUTPUT_NEW, step=step_name, sources=common_sources, parameters=common_params,
-                    notes="Newly found inhibitors with per-PMID records.")
-append_release_info(OUTPUT_NEW_EXCEL, step=step_name, sources=common_sources, parameters=common_params,
-                    notes="Excel version with clickable PubMed hyperlinks in 'URL' column.")
-append_release_info(OUTPUT, step=step_name, sources=common_sources, parameters=common_params,
-                    notes="Aggregated stats: compound, pubmed_references, known_status (known refs appended at 100).")
+append_release_info(
+    OUTPUT_NEW,
+    step=step_name,
+    sources=common_sources,
+    parameters={**common_params},
+    notes=(
+        "Newly found inhibitors with per-PMID records.\n"
+        "Columns: pmid, confidence (LLM label), compound.\n"
+        "Excel version also includes a clickable PubMed URL."
+    ),
+)
 
-print("[INFO] Setup complete.")
+append_release_info(
+    OUTPUT_NEW_EXCEL,
+    step=step_name,
+    sources=common_sources,
+    parameters={**common_params},
+    notes=(
+        "Excel mirror of new inhibitors with clickable PubMed hyperlinks "
+        'in column \"URL\".'
+    ),
+)
+
+append_release_info(
+    OUTPUT,
+    step=step_name,
+    sources=common_sources,
+    parameters={
+        **common_params,
+        "known_ref_boost": 100,
+        "confidence_bins": "low: ≤1; low-medium: 2; medium: 3–5; high: ≥6",
+        "pubmed_ids_concat": "unique PMIDs, sorted, ';' separated",
+    },
+    notes=(
+        "Aggregated stats per compound including:\n"
+        "- pubmed_references (unique PMID count)\n"
+        "- known_status (reference list appended at 100)\n"
+        "- confidence: categorical score based on pubmed_references count "
+        "(low, low-medium, medium, high)\n"
+        "- pubmed_ids (unique, sorted, ';' separated)"
+    ),
+)
+
+print('[INFO] Setup complete.')
 
