@@ -16,6 +16,10 @@ import hashlib
 import datetime as _dt
 import pandas as pd
 import numpy as np
+import requests
+import math
+from rdkit import Chem
+from rdkit.Chem import AllChem, DataStructs
 from pathlib import Path
 
 # --------------------------------------------------------------------------
@@ -87,6 +91,117 @@ for item in PROCESSED_DIR.glob("*"):
 print(f"[INFO] Creating release folder: {release_dir}")
 release_dir.mkdir(parents=True, exist_ok=True)
 
+from rdkit import Chem
+from rdkit.Chem import AllChem, DataStructs
+import pandas as pd
+import numpy as np
+import math
+
+def add_tanimoto_scores(
+    df: pd.DataFrame,
+    fp_radius: int = 2,      # 2 → ECFP4
+    nbits: int = 2048,
+    topk: int = 3
+) -> pd.DataFrame:
+    """
+    Append RDKit-based similarity scores + confidence label to a mito.txt-like DataFrame.
+
+    Input df must have columns: 'compound', 'known_status', 'SMILES'
+    Adds columns:
+      - MaxSim_all (float or None)
+      - TopKMean_all (float or None)
+      - BestRef_name (str or None)
+      - confidence_similarity (str in {'high','medium','low','very-low'} or None)
+    """
+
+    # ----------------- helpers -----------------
+    def mol_from_smiles(s):
+        if not isinstance(s, str) or not s.strip():
+            return None
+        m = Chem.MolFromSmiles(s)
+        if m is None:
+            return None
+        Chem.SanitizeMol(m)
+        return m
+
+    def ecfp(m):
+        return AllChem.GetMorganFingerprintAsBitVect(m, radius=fp_radius, nBits=nbits)
+
+    def inchikey(m):
+        try:
+            return Chem.MolToInchiKey(m)
+        except Exception:
+            return None
+
+    def topk_mean(vals, k=3):
+        if not vals:
+            return np.nan
+        arr = sorted(vals, reverse=True)
+        k = min(k, len(arr))
+        return float(np.mean(arr[:k]))
+
+    def confidence_from_sims(maxsim, topkmean):
+        # Prefer TopK mean; fall back to MaxSim if TopK is NaN
+        v = topkmean if (topkmean == topkmean) else maxsim  # NaN check
+        if v != v or v is None:          # both NaN/None
+            return None
+        if v >= 0.70:
+            return "high"
+        if v >= 0.50:
+            return "medium"
+        if v >= 0.30:
+            return "low"
+        return "very-low"
+
+    # ----------------- prepare refs -----------------
+    refs = df[(df["known_status"].astype(str).str.lower() == "known") & df["SMILES"].notna()].copy()
+    refs["mol"] = refs["SMILES"].apply(mol_from_smiles)
+    refs = refs.dropna(subset=["mol"]).copy()
+    refs["inchikey"] = refs["mol"].apply(inchikey)
+    refs = refs.drop_duplicates(subset=["inchikey"]).reset_index(drop=True)
+    refs["fp"] = refs["mol"].apply(ecfp)
+
+    # If no valid refs, just append empty columns and return
+    if refs.empty:
+        out = df.copy()
+        out["MaxSim_all"] = None
+        out["TopKMean_all"] = None
+        out["BestRef_name"] = None
+        out["confidence_similarity"] = None
+        return out
+
+    ref_fps   = refs["fp"].tolist()
+    ref_names = refs["compound"].tolist()
+
+    # ----------------- compute per-row -----------------
+    rows = []
+    for _, row in df.iterrows():
+        smi = row.get("SMILES", None)
+        max_sim = np.nan
+        mean_tk = np.nan
+        best_name = None
+
+        if isinstance(smi, str) and smi.strip():
+            mol = mol_from_smiles(smi)
+            if mol is not None:
+                fp = ecfp(mol)
+                sims = DataStructs.BulkTanimotoSimilarity(fp, ref_fps)
+                if sims:
+                    max_idx = int(np.argmax(sims))
+                    max_sim = float(sims[max_idx])
+                    mean_tk = topk_mean(sims, topk)
+                    best_name = ref_names[max_idx]
+
+        rows.append({
+            "MaxSim_all": round(max_sim, 3) if (max_sim == max_sim) else None,
+            "TopKMean_all": round(mean_tk, 3) if (mean_tk == mean_tk) else None,
+            "BestRef_name": best_name,
+            "confidence_similarity": confidence_from_sims(max_sim, mean_tk),
+        })
+
+    return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
+
+
 # --------------------------------------------------------------------------
 # Define output file path
 # --------------------------------------------------------------------------
@@ -107,8 +222,10 @@ with open(REF_INHIBITORS, "r", encoding="utf-8") as f:
 def normalize_compound_name(name: str) -> str:
     # remove spaces and dashes, lowercase
     norm = re.sub(r"[-\s]", "", name.strip().lower())
+    norm = norm.replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-") # minus sign
+    norm = re.sub(r"\s+", " ", norm)               
     # strip trailing 's' if plural and not an obvious chemical suffix (e.g., 'us', 'is')
-    if len(norm) > 4 and norm.endswith("s") and not norm.endswith(("us", "is")):
+    if len(norm) > 4 and norm.endswith("s") and not norm.endswith(("us", "is","os","gas")):
         norm = norm[:-1]
     return norm
 
@@ -122,8 +239,9 @@ for c in ref:
         unique_refs[norm] = c.strip()
 
 ref = set(unique_refs.values())
-ref.difference_update(["Roterone","Piericidin"])
+ref.difference_update(["Roterone","Piericidin","Bongkrekic"])
 ref.add("Piericidin A")
+ref.add("Bongkrekic acid")
 ref = sorted(ref)
 
 def openparanthese(s: str) -> str:
@@ -153,7 +271,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
-    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil"])
+    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium"])
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
     inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
 
@@ -213,6 +331,73 @@ stats = stats[["compound", "pubmed_references", "known_status", "confidence", "p
 
 # Final sort
 stats = stats.sort_values(["pubmed_references", "compound"], ascending=[False, True]).reset_index(drop=True)
+
+# add smiles
+###############################################################################
+
+
+targets = stats.loc[stats["confidence"]!="low","compound"].unique().tolist()
+
+def _first_smiles(props: dict):
+    """Pick the best available SMILES key from a PubChem properties dict."""
+    for k in ("IsomericSMILES", "CanonicalSMILES", "SMILES", "ConnectivitySMILES"):
+        if k in props and props[k]:
+            return props[k], k
+    return None, None
+
+def fetch_smiles(name: str, normalize : bool = True):
+    """Try PubChem, then fallback to ChEMBL (URL-safe, with spaces encoded)."""
+    if normalize:
+        base = normalize_compound_name(name)
+    else:
+        base = name.strip().replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-") # minus sign
+    encoded = requests.utils.quote(base, safe="")  # ensure spaces → %20
+
+    # --- PubChem ---
+    try:
+        url = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{encoded}/property/IsomericSMILES,CanonicalSMILES,SMILES,ConnectivitySMILES,InChIKey/JSON")
+        r = requests.get(url, timeout=20)
+        if r.ok:
+            props = r.json()["PropertyTable"]["Properties"][0]
+            smi, which = _first_smiles(props)
+            if smi:
+                return smi, f"PubChem:{which}", base
+    except Exception:
+        pass
+
+    # --- ChEMBL fallback ---
+    try:
+        url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/search?q={encoded}&format=json"
+        r = requests.get(url, timeout=20)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("molecules"):
+                smi = data["molecules"][0].get("molecule_structures", {}).get("canonical_smiles")
+                if smi:
+                    return smi, "ChEMBL", base
+    except Exception:
+        pass
+
+    return None, None, base
+
+
+smiles = {}
+i = 0
+n = len(targets)
+for t in targets:
+    i = i + 1
+    smi, source, query = fetch_smiles(t)
+    if not smi:
+        # try one more time
+        smi, source, query = fetch_smiles(t,normalize=False)          
+    print(f"{i}/{n} compounds: {t} -> {smi} - {source} - {query}")  
+    smiles[t] = smi
+    time.sleep(0.2)
+
+stats["SMILES"] = stats["compound"].map(smiles).fillna("")
+
+#
+stats = add_tanimoto_scores(stats)
 
 # Write stats to OUTPUT
 stats.to_csv(OUTPUT, sep="\t", index=False)
