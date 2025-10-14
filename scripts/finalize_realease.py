@@ -265,7 +265,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
             r.extend(t)
     inh = r[:]
     inh = [(e[0],e[1],openparanthese(e[2])) for e in inh if e[2].strip()]
-    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin")) for e in inh if e[2].strip()]
+    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
     blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium","rotenone"])
@@ -273,11 +273,11 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
 
 # some statistics
-df = pd.DataFrame(inh, columns=["pmid", "confidence_pubmed", "compound"])
+df = pd.DataFrame(inh, columns=["pmid", "confidence", "compound"])
 
 # Basic cleaning
 df["pmid"] = df["pmid"].astype(str).str.strip()
-df["confidence_pubmed"] = df["confidence_pubmed"].str.strip()
+df["confidence"] = df["confidence"].str.strip()
 df["compound"] = df["compound"].str.strip()
 
 # Write stats to OUTPUT_NEW
@@ -456,7 +456,7 @@ append_release_info(
         "Aggregated stats per compound including:\n"
         "- pubmed_references (unique PMID count)\n"
         "- known_status (reference list appended at 100)\n"
-        "- confidence: categorical score based on pubmed_references count "
+        "- confidence_pubmed: categorical score based on pubmed_references count "
         "(very-low, low, medium, high)\n"
         "- pubmed_ids (unique, sorted, ';' separated)"
     ),

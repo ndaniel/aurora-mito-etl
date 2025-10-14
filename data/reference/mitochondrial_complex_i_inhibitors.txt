@@ -1,3 +1,5 @@
+1-methyl-4-phenylpyridinium
+Acetogenin
 Annonacin
 Arctigenin
 Atractyloside
@@ -6,6 +8,7 @@ BAY87-2243
 Berberine
 Bongkrekic
 Bullatacin
+Bupivacaine
 Capsaicin
 Curcumin
 Deguelin
@@ -20,6 +23,7 @@ IACS-010759
 IACS010759
 Isopetasin
 Licochalcone
+Mangostin
 Metformin
 MPP+
 MPTP
@@ -40,5 +44,4 @@ Tamoxifen
 Thioridazine
 Trifluoperazine
 Valinomycin
-Mangostin
 
