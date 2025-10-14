@@ -319,6 +319,7 @@ def score_biguanide_like(smiles_list, refs=MCI_REFS, alpha=0.7, beta=0.3):
         lambda r: (0 if r["has_biguanide_core"] or r["has_biguanide_motif"] else 1,
                    -(r["best_biguanide_like_tversky"] or -1)), axis=1)
     df = df.sort_values("_rank_key").drop(columns=["_rank_key"]).reset_index(drop=True)
+    
     return df
 
 
@@ -409,7 +410,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
-    inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
+    inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and (not e[2].lower().startswith("compound")) and e[2].lower().find("nanoparticle")==-1 ]
 
 # some statistics
 df = pd.DataFrame(inh, columns=["pmid", "confidence", "compound"])
@@ -527,6 +528,7 @@ for t in targets:
     smi, source, query = fetch_smiles(t)
     if not smi:
         # try one more time
+        time.sleep(1)
         smi, source, query = fetch_smiles(t,normalize=False)          
     print(f"{i}/{n} compounds: {t} -> {smi} - {source} - {query}")  
     smiles[t] = smi
