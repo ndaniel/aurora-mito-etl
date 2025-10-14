@@ -6,7 +6,9 @@ Atractyloside
 BAY 87-2243
 BAY87-2243
 Berberine
+Biguanide
 Bongkrekic
+Buformin
 Bullatacin
 Bupivacaine
 Capsaicin
@@ -17,6 +19,7 @@ EVT-701
 EVT701
 Fenazaquin
 Fenpyroximate
+Galegine
 Gossypol
 Honokiol
 IACS-010759

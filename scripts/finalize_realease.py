@@ -212,6 +212,8 @@ print("[INFO] Reading known complex I inhibitors.")
 ref = []
 with open(REF_INHIBITORS, "r", encoding="utf-8") as f:
     ref = sorted(set([e.strip() for e in f if e.strip()]))
+    
+black_ref = set([e.strip().lower() for e in ref if e.strip()])
 
 # --------------------------------------------------------------------------
 # Deduplicate known reference compounds (normalize: remove spaces/dashes, lowercase)
@@ -268,7 +270,8 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
-    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium","rotenone","IACS-10759"])
+    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium","rotenone","iacs-10759"])
+    blacklist.update(black_ref)
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
     inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
 
@@ -391,7 +394,7 @@ for t in targets:
         smi, source, query = fetch_smiles(t,normalize=False)          
     print(f"{i}/{n} compounds: {t} -> {smi} - {source} - {query}")  
     smiles[t] = smi
-    time.sleep(0.2)
+    time.sleep(1)
 
 stats["SMILES"] = stats["compound"].map(smiles).fillna("")
 
