@@ -66,13 +66,8 @@ Essential command-line tools:
 Python libraries are managed via `requirements.txt`. Recent updates to the
 release finalization step require the following additional packages:
 - `requests` – REST calls to PubChem and ChEMBL.
-- `rdkit-pypi` – molecular fingerprints + Tanimoto similarity scoring.
+- `rdkit` – molecular fingerprints + Tanimoto similarity scoring.
 - `openpyxl` – Excel writer backend for the per-run summary workbook.
-
-> **Tip:** RDKit wheels are large and easiest to install via
-> `conda install -c rdkit rdkit`. When using pip, prefer an environment where
-> binary wheels are available (Linux x86_64, Python ≥3.8).
-
 
 ---
 
@@ -102,6 +97,8 @@ All data are **downloaded directly** from official NCBI FTP servers:
 
 - **PubMed**: [https://ftp.ncbi.nlm.nih.gov/pubmed/](https://ftp.ncbi.nlm.nih.gov/pubmed/)  
 - **PubTator3**: [https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/](https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/)
+- **PubChem**: [https://pubchem.ncbi.nlm.nih.gov/](https://pubchem.ncbi.nlm.nih.gov/)
+- **ChEMBL**: [https://www.ebi.ac.uk/chembl/](https://www.ebi.ac.uk/chembl/)
 
 The use, redistribution, and citation of the data are governed by their respective
 providers - primarily the **U.S. National Library of Medicine (NLM)** 
@@ -110,7 +107,9 @@ and **National Center for Biotechnology Information (NCBI)**.
 For details on licensing and reuse, refer to:
 
 - [PubMed Data Usage Policies](https://www.nlm.nih.gov/databases/download/pubmed_medline.html)  
-- [PubTator3 Terms of Use](https://www.ncbi.nlm.nih.gov/home/about/policies/)  
+- [PubTator3 Terms of Use](https://www.ncbi.nlm.nih.gov/home/about/policies/)
+- [PubChem Terms of Use](https://www.ncbi.nlm.nih.gov/home/about/policies/)
+- [ChEMBL Terms of Use](https://chembl.github.io/chembl-licensing/)
 
 All users of this pipeline are responsible for complying with the terms and
 conditions of those data providers.
@@ -142,3 +141,6 @@ An Excel mirror (`all_mito_complex_I_inhibitors.xlsx`) is emitted alongside the
 TSV to simplify exploratory review.
 
 Refer to `etl/schema/DATA_DICTIONARY.md` for the full column reference.
+
+
+

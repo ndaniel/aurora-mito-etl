@@ -18,9 +18,14 @@ import pandas as pd
 import numpy as np
 import requests
 import math
-from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs
 from pathlib import Path
+
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem, inchi
+from rdkit.Chem import AllChem, inchi
+from rdkit.Chem import rdFingerprintGenerator as rfg
+
+
 
 # --------------------------------------------------------------------------
 # Repo-aware paths
@@ -91,45 +96,42 @@ for item in PROCESSED_DIR.glob("*"):
 print(f"[INFO] Creating release folder: {release_dir}")
 release_dir.mkdir(parents=True, exist_ok=True)
 
-from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs
-import pandas as pd
-import numpy as np
-import math
 
-def add_tanimoto_scores(
-    df: pd.DataFrame,
-    fp_radius: int = 2,      # 2 → ECFP4
-    nbits: int = 2048,
-    topk: int = 3
-) -> pd.DataFrame:
-    """
-    Append RDKit-based similarity scores + confidence label to a mito.txt-like DataFrame.
+def _make_morgan_gen(fp_radius: int, nbits: int):
+    # Try modern kw signature first; fall back to positional for older builds.
+    try:
+        return rfg.GetMorganGenerator(
+            radius=fp_radius,
+            includeChirality=True,   # NOTE: includeChirality (not useChirality)
+            useBondTypes=True,
+            fpSize=nbits
+        )
+    except TypeError:
+        # Older RDKit: use positional args to avoid kw-name drift
+        # (radius, countSimulation, includeChirality, useBondTypes,
+        #  onlyNonzeroInvariants, includeRingMembership, countBounds, fpSize, ...)
+        return rfg.GetMorganGenerator(fp_radius, False, True, True, False, True, None, nbits)
 
-    Input df must have columns: 'compound', 'known_status', 'SMILES'
-    Adds columns:
-      - MaxSim_all (float or None)
-      - TopKMean_all (float or None)
-      - BestRef_name (str or None)
-      - confidence_similarity (str in {'high','medium','low','very-low'} or None)
-    """
+def add_tanimoto_scores(df: pd.DataFrame, fp_radius=2, nbits=2048, topk=3) -> pd.DataFrame:
+    gen = _make_morgan_gen(fp_radius, nbits)
 
-    # ----------------- helpers -----------------
     def mol_from_smiles(s):
         if not isinstance(s, str) or not s.strip():
             return None
-        m = Chem.MolFromSmiles(s)
-        if m is None:
+        try:
+            return Chem.MolFromSmiles(s, sanitize=True)
+        except Exception:
             return None
-        Chem.SanitizeMol(m)
-        return m
 
     def ecfp(m):
+        if gen is not None:
+            return gen.GetFingerprint(m)
+        # Fallback for very old RDKit (deprecated but safe as a backup)
         return AllChem.GetMorganFingerprintAsBitVect(m, radius=fp_radius, nBits=nbits)
 
     def inchikey(m):
         try:
-            return Chem.MolToInchiKey(m)
+            return inchi.MolToInchiKey(m)
         except Exception:
             return None
 
@@ -137,23 +139,17 @@ def add_tanimoto_scores(
         if not vals:
             return np.nan
         arr = sorted(vals, reverse=True)
-        k = min(k, len(arr))
-        return float(np.mean(arr[:k]))
+        return float(np.mean(arr[: min(k, len(arr))]))
 
     def confidence_from_sims(maxsim, topkmean):
-        # Prefer TopK mean; fall back to MaxSim if TopK is NaN
-        v = topkmean if (topkmean == topkmean) else maxsim  # NaN check
-        if v != v or v is None:          # both NaN/None
+        v = topkmean if (topkmean == topkmean) else maxsim
+        if v != v or v is None:
             return None
-        if v >= 0.70:
-            return "high"
-        if v >= 0.50:
-            return "medium"
-        if v >= 0.30:
-            return "low"
+        if v >= 0.70: return "high"
+        if v >= 0.50: return "medium"
+        if v >= 0.30: return "low"
         return "very-low"
 
-    # ----------------- prepare refs -----------------
     refs = df[(df["known_status"].astype(str).str.lower() == "known") & df["SMILES"].notna()].copy()
     refs["mol"] = refs["SMILES"].apply(mol_from_smiles)
     refs = refs.dropna(subset=["mol"]).copy()
@@ -161,7 +157,6 @@ def add_tanimoto_scores(
     refs = refs.drop_duplicates(subset=["inchikey"]).reset_index(drop=True)
     refs["fp"] = refs["mol"].apply(ecfp)
 
-    # If no valid refs, just append empty columns and return
     if refs.empty:
         out = df.copy()
         out["MaxSim_all"] = None
@@ -173,7 +168,6 @@ def add_tanimoto_scores(
     ref_fps   = refs["fp"].tolist()
     ref_names = refs["compound"].tolist()
 
-    # ----------------- compute per-row -----------------
     rows = []
     for _, row in df.iterrows():
         smi = row.get("SMILES", None)
@@ -200,8 +194,10 @@ def add_tanimoto_scores(
         })
 
     return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
-
-
+    
+    
+    
+    
 # --------------------------------------------------------------------------
 # Define output file path
 # --------------------------------------------------------------------------
@@ -272,16 +268,16 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
-    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium"])
+    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium","rotenone"])
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
     inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
 
 # some statistics
-df = pd.DataFrame(inh, columns=["pmid", "confidence", "compound"])
+df = pd.DataFrame(inh, columns=["pmid", "confidence_pubmed", "compound"])
 
 # Basic cleaning
 df["pmid"] = df["pmid"].astype(str).str.strip()
-df["confidence"] = df["confidence"].str.strip()
+df["confidence_pubmed"] = df["confidence_pubmed"].str.strip()
 df["compound"] = df["compound"].str.strip()
 
 # Write stats to OUTPUT_NEW
@@ -321,13 +317,13 @@ known_df = pd.DataFrame({
 # Concatenate both
 stats = pd.concat([stats, known_df], ignore_index=True)
 
-stats["confidence"] = pd.cut(
+stats["confidence_pubmed"] = pd.cut(
     stats["pubmed_references"],
-    bins=[-np.inf, 1, 2, 5, np.inf],
-    labels=["low", "low-medium", "medium", "high"]
+    bins=[-np.inf, 1, 2, 4, np.inf],
+    labels=["very-low", "low", "medium", "high"]
 )
 
-stats = stats[["compound", "pubmed_references", "known_status", "confidence", "pubmed_ids"]]
+stats = stats[["compound", "pubmed_references", "known_status", "confidence_pubmed", "pubmed_ids"]]
 
 
 # Final sort
@@ -337,7 +333,9 @@ stats = stats.sort_values(["pubmed_references", "compound"], ascending=[False, T
 ###############################################################################
 
 
-targets = stats.loc[stats["confidence"]!="low","compound"].unique().tolist()
+#targets = stats.loc[stats["confidence_pubmed"]!="very-low","compound"].unique().tolist()
+# take all compounds
+targets = stats["compound"].unique().tolist()
 
 def _first_smiles(props: dict):
     """Pick the best available SMILES key from a PubChem properties dict."""
@@ -451,7 +449,7 @@ append_release_info(
     parameters={
         **common_params,
         "known_ref_boost": 100,
-        "confidence_bins": "low: ≤1; low-medium: 2; medium: 3–5; high: ≥6",
+        "confidence_bins": "very-low: ≤1; low: 2; medium: 3–4; high: ≥5",
         "pubmed_ids_concat": "unique PMIDs, sorted, ';' separated",
     },
     notes=(
@@ -459,7 +457,7 @@ append_release_info(
         "- pubmed_references (unique PMID count)\n"
         "- known_status (reference list appended at 100)\n"
         "- confidence: categorical score based on pubmed_references count "
-        "(low, low-medium, medium, high)\n"
+        "(very-low, low, medium, high)\n"
         "- pubmed_ids (unique, sorted, ';' separated)"
     ),
 )
@@ -471,7 +469,7 @@ append_release_info(
     parameters={
         **common_params,
         "known_ref_boost": 100,
-        "confidence_bins": "low: ≤1; low-medium: 2; medium: 3–5; high: ≥6",
+        "confidence_bins": "very-low: ≤1; low: 2; medium: 3–4; high: ≥5",
         "pubmed_ids_concat": "unique PMIDs, sorted, ';' separated",
     },
     notes=(
