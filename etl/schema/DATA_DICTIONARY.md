@@ -32,6 +32,16 @@ Column order is normative for TSV/CSV artifacts.
 - **compound** *(string)* — canonical representative string.
 - **pubmed_references** *(integer)* — count of unique PMIDs referencing this compound.
 - **known_status** *(string)* — `known` (from reference list) or `new` (from classifier outputs).
+- **confidence** *(string)* — qualitative bucket from PubMed counts (`low`, `low-medium`, `medium`, `high`).
+- **pubmed_ids** *(string)* — semicolon-joined list of unique PMIDs supporting the row.
+- **SMILES** *(string)* — best-available structure harvested from PubChem/ChEMBL (may be empty).
+- **MaxSim_all** *(number)* — highest RDKit Tanimoto similarity vs. known reference inhibitors (ECFP4).
+- **TopKMean_all** *(number)* — mean of the top-k (default 3) Tanimoto scores vs. reference inhibitors.
+- **BestRef_name** *(string)* — reference inhibitor associated with the max similarity score.
+- **confidence_similarity** *(string)* — similarity-derived label (`high`, `medium`, `low`, `very-low`).
+
+> The Excel counterpart `data/processed/<date>/all_mito_complex_I_inhibitors.xlsx`
+> carries the same columns and ordering.
 
 ## Conventions
 - All files are UTF-8 encoded.

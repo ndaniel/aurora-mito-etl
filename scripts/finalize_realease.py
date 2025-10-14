@@ -206,6 +206,7 @@ def add_tanimoto_scores(
 # Define output file path
 # --------------------------------------------------------------------------
 OUTPUT = release_dir / "all_mito_complex_I_inhibitors.txt"
+OUTPUT_EXCEL = release_dir / "all_mito_complex_I_inhibitors.xlsx"
 OUTPUT_NEW = release_dir / "new_mito_complex_I_inhibitors.txt"
 OUTPUT_NEW_EXCEL = release_dir / "new_mito_complex_I_inhibitors.xlsx"
 
@@ -399,8 +400,14 @@ stats["SMILES"] = stats["compound"].map(smiles).fillna("")
 #
 stats = add_tanimoto_scores(stats)
 
+# Keep SMILES as the final column in the exported table for readability
+if "SMILES" in stats.columns:
+    ordered_cols = [c for c in stats.columns if c != "SMILES"] + ["SMILES"]
+    stats = stats[ordered_cols]
+
 # Write stats to OUTPUT
 stats.to_csv(OUTPUT, sep="\t", index=False)
+stats.to_excel(OUTPUT_EXCEL, index=False)
 
 print("[INFO] Writing release_info entries.")
 step_name = Path(__file__).name
@@ -457,5 +464,20 @@ append_release_info(
     ),
 )
 
-print('[INFO] Setup complete.')
+append_release_info(
+    OUTPUT_EXCEL,
+    step=step_name,
+    sources=common_sources,
+    parameters={
+        **common_params,
+        "known_ref_boost": 100,
+        "confidence_bins": "low: ≤1; low-medium: 2; medium: 3–5; high: ≥6",
+        "pubmed_ids_concat": "unique PMIDs, sorted, ';' separated",
+    },
+    notes=(
+        "Excel mirror of the aggregated compound summary with SMILES and RDKit "
+        "similarity metrics."
+    ),
+)
 
+print('[INFO] Setup complete.')

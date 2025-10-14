@@ -6,7 +6,8 @@ queryable mirror of [PubMed](http://pubmed.ncbi.nlm.nih.gov/) abstracts
 and [PubTator](https://www.ncbi.nlm.nih.gov/research/pubtator3/) chemical annotations.
 
 This project extracts small compounds names that are known to inhibit mitochondrial 
-complex I from PubMed database using LLM.
+complex I from PubMed database using LLM and enriches them with cheminformatics
+metadata for downstream analysis.
 
 This repository automates:
 1. **Data acquisition** – downloads the latest PubMed XML baselines + updates
@@ -62,6 +63,16 @@ Essential command-line tools:
 - `grep` (GNU)
 - `zcat`
 
+Python libraries are managed via `requirements.txt`. Recent updates to the
+release finalization step require the following additional packages:
+- `requests` – REST calls to PubChem and ChEMBL.
+- `rdkit-pypi` – molecular fingerprints + Tanimoto similarity scoring.
+- `openpyxl` – Excel writer backend for the per-run summary workbook.
+
+> **Tip:** RDKit wheels are large and easiest to install via
+> `conda install -c rdkit rdkit`. When using pip, prefer an environment where
+> binary wheels are available (Linux x86_64, Python ≥3.8).
+
 
 ---
 
@@ -104,4 +115,30 @@ For details on licensing and reuse, refer to:
 All users of this pipeline are responsible for complying with the terms and
 conditions of those data providers.
 
+---
 
+## Processed outputs
+
+The finalization script (`scripts/finalize_realease.py`) assembles the
+release artifacts under `data/processed/<date>/` and now augments the
+compound summary with cheminformatics cues:
+
+- Pulls SMILES strings via PubChem, with ChEMBL as a fallback.
+- Calculates extended-connectivity fingerprints (ECFP4/2048) with RDKit.
+- Derives per-compound Tanimoto metrics vs. the curated reference inhibitors.
+- Adds similarity-based confidence tiers alongside the LLM confidence labels.
+- Exports both TSV (for pipelines) and Excel (for analyst review) versions of the
+  aggregated summary.
+
+The primary table `all_mito_complex_I_inhibitors.txt` now includes:
+- `SMILES` – best available structure for downstream QSAR work.
+- `MaxSim_all` – highest Tanimoto score vs. known inhibitors.
+- `TopKMean_all` – mean Tanimoto over the top-k matches (default k=3).
+- `BestRef_name` – reference compound producing the max similarity.
+- `confidence_similarity` – qualitative label derived from the similarity
+  metrics (`high`, `medium`, `low`, `very-low`).
+
+An Excel mirror (`all_mito_complex_I_inhibitors.xlsx`) is emitted alongside the
+TSV to simplify exploratory review.
+
+Refer to `etl/schema/DATA_DICTIONARY.md` for the full column reference.

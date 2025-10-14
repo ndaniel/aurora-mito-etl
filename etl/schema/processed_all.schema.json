@@ -8,8 +8,16 @@
       "minLength": 1
     },
     "pubmed_references": {
-      "type": "integer",
-      "minimum": 0
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^\\d+$"
+        }
+      ]
     },
     "known_status": {
       "type": "string",
@@ -17,12 +25,56 @@
         "known",
         "new"
       ]
+    },
+    "confidence": {
+      "type": "string"
+    },
+    "pubmed_ids": {
+      "type": "string"
+    },
+    "SMILES": {
+      "type": "string"
+    },
+    "MaxSim_all": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:\\d+(?:\\.\\d+)?|)$"
+        }
+      ]
+    },
+    "TopKMean_all": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:\\d+(?:\\.\\d+)?|)$"
+        }
+      ]
+    },
+    "BestRef_name": {
+      "type": "string"
+    },
+    "confidence_similarity": {
+      "type": "string"
     }
   },
   "required": [
     "compound",
     "pubmed_references",
-    "known_status"
+    "known_status",
+    "confidence",
+    "pubmed_ids",
+    "SMILES",
+    "MaxSim_all",
+    "TopKMean_all",
+    "BestRef_name",
+    "confidence_similarity"
   ],
   "additionalProperties": false
 }

@@ -4,3 +4,7 @@ openai==1.40.6
 pandas==2.2.2
 tqdm==4.66.4
 
+# Finalization enrichments
+requests==2.32.3
+openpyxl==3.1.5
+rdkit-pypi==2023.9.5
