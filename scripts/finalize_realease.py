@@ -22,6 +22,10 @@ from pathlib import Path
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, inchi
+try:
+    from rdkit.Chem import rdMolStandardize  # RDKit >= 2022.03
+except ImportError:  # pragma: no cover
+    from rdkit.Chem.MolStandardize import rdMolStandardize  # Older RDKit builds
 from rdkit.Chem import rdFingerprintGenerator as rfg
 from rdkit.Chem.rdmolops import RemoveHs
 
@@ -122,6 +126,21 @@ def _make_morgan_gen(fp_radius: int, nbits: int):
         #  onlyNonzeroInvariants, includeRingMembership, countBounds, fpSize, ...)
         return rfg.GetMorganGenerator(fp_radius, False, True, True, False, True, None, nbits)
 
+def _make_morgan_gen(fp_radius: int, nbits: int):
+    # Try modern kw signature first; fall back to positional for older builds.
+    try:
+        return rfg.GetMorganGenerator(
+            radius=fp_radius,
+            includeChirality=True,   # NOTE: includeChirality (not useChirality)
+            useBondTypes=True,
+            fpSize=nbits
+        )
+    except TypeError:
+        # Older RDKit: use positional args to avoid kw-name drift
+        # (radius, countSimulation, includeChirality, useBondTypes,
+        #  onlyNonzeroInvariants, includeRingMembership, countBounds, fpSize, ...)
+        return rfg.GetMorganGenerator(fp_radius, False, True, True, False, True, None, nbits)
+
 def add_tanimoto_scores(df: pd.DataFrame, fp_radius=2, nbits=2048, topk=3) -> pd.DataFrame:
     gen = _make_morgan_gen(fp_radius, nbits)
 
@@ -205,11 +224,7 @@ def add_tanimoto_scores(df: pd.DataFrame, fp_radius=2, nbits=2048, topk=3) -> pd
 
     return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
     
-# pip install rdkit-pypi pandas
-import pandas as pd
-from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem
-from rdkit.Chem.rdmolops import RemoveHs
+    
 
 MCI_REFS = {
     "biguanide": "NC(=N)NC(=N)N",
@@ -220,14 +235,43 @@ MCI_REFS = {
     "proguanil": "CC(C)NC(=N)NC(=N)Nc1ccc(Cl)cc1"
 }
 
-def score_biguanide_like(smiles_list, refs=MCI_REFS, alpha=0.7, beta=0.3):
+def _make_morgan_count_gen(radius=2):
+    """
+    Return a Morgan fingerprint generator (count-based if available).
+    Works across RDKit versions.
+    """
+    try:
+        gen = rfg.GetMorganGenerator(radius=radius)
+        # If available, we can later call gen.GetCountFingerprint(mol)
+        return gen
+    except Exception:
+        return None  # fallback handled later
+
+def score_biguanide_like(
+    smiles_list, 
+    refs=MCI_REFS, 
+    alpha=0.7, 
+    beta=0.3, 
+    sort_by_rank=True,
+    tautomer_aware=True,
+    uncharge=True
+):
     """
     Given a list of SMILES, return a DataFrame with:
-      - biguanide/biguanide_motif substructure flags
-      - similarity vs 'biguanide' (Tversky/Dice)
+      - biguanide/biguanide_motif substructure flags (tautomer-aware if enabled)
+      - similarity vs 'biguanide' (Tversky/Dice, ECFP4 count fingerprints)
       - best similarity across all refs (Tversky/Dice) + which ref matched
-      - ranked by substructure hit and Tversky score
+      - ranked by (substructure hit first) and best Tversky score
+
+    Notes:
+    - Tautomer-aware substructure helps NC(=N)NC(=N)N match C(=NC(=N)N)(N)N.
+    - Uncharge reduces false negatives due to protonation states.
     """
+
+    te = rdMolStandardize.TautomerEnumerator()
+    uncharger = rdMolStandardize.Uncharger() if uncharge else None
+    count_gen = _make_morgan_count_gen(2)
+
     def largest_fragment_smiles(smiles: str):
         try:
             mol = Chem.MolFromSmiles(smiles)
@@ -254,30 +298,67 @@ def score_biguanide_like(smiles_list, refs=MCI_REFS, alpha=0.7, beta=0.3):
             Chem.SanitizeMol(m)
         except Exception:
             return None
+        if uncharger is not None:
+            try:
+                m = uncharger.uncharge(m)
+            except Exception:
+                pass
         return RemoveHs(m)
 
     def ecfp4_count_fp(mol):
-        return AllChem.GetMorganFingerprint(mol, radius=2)  # count-based fingerprint
+        if mol is None:
+            return None
+        if count_gen is not None:
+            # Prefer count fingerprints when available
+            try:
+                return count_gen.GetCountFingerprint(mol)
+            except AttributeError:
+                return count_gen.GetFingerprint(mol, countSimulation=True)
+        # Fallback for older RDKit
+        return AllChem.GetMorganFingerprint(mol, radius=2)
 
     def tversky(fp_a, fp_b):
-        return DataStructs.TverskySimilarity(fp_a, fp_b, alpha=alpha, beta=beta)
+        return DataStructs.TverskySimilarity(fp_a, fp_b, a=alpha, b=beta)
 
     def dice(fp_a, fp_b):
         return DataStructs.DiceSimilarity(fp_a, fp_b)
 
-    # prepare reference molecules/fingerprints
+    # Prepare reference molecules/fingerprints
     ref_mols = {name: mol_from_smiles(smi) for name, smi in refs.items()}
     ref_fps  = {name: ecfp4_count_fp(m) for name, m in ref_mols.items() if m is not None}
 
-    patt_biguanide = Chem.MolFromSmarts(refs.get("biguanide")) if "biguanide" in refs else None
-    patt_biguanide_motif = Chem.MolFromSmarts(refs.get("biguanide_motif")) if "biguanide_motif" in refs else None
+    # Build tautomer-aware "patterns" for the two structural checks
+    biguanide_core_smiles = refs.get("biguanide")
+    biguanide_motif_smiles = refs.get("biguanide_motif")
+
+    core_mol = mol_from_smiles(biguanide_core_smiles) if biguanide_core_smiles else None
+    motif_mol = mol_from_smiles(biguanide_motif_smiles) if biguanide_motif_smiles else None
+
+    def tautomer_submatch(query_mol, target_mol):
+        """Return True if *any tautomer* of query is a substructure of target."""
+        if query_mol is None or target_mol is None:
+            return False
+        if not tautomer_aware:
+            return target_mol.HasSubstructMatch(query_mol)
+        try:
+            for q_tau in te.Enumerate(query_mol):
+                if target_mol.HasSubstructMatch(q_tau):
+                    return True
+            return False
+        except Exception:
+            # Fallback to plain substructure if enumerator fails
+            return target_mol.HasSubstructMatch(query_mol)
+
+    biguanide_fp = ref_fps.get("biguanide")
 
     rows = []
     for smi in smiles_list:
-        m = mol_from_smiles(smi)
+        smi_val = "" if pd.isna(smi) else (smi if isinstance(smi, str) else str(smi))
+        m = mol_from_smiles(smi_val)
+
         if m is None:
             rows.append({
-                "smiles": smi,
+                "smiles": smi_val,
                 "has_biguanide_core": False,
                 "has_biguanide_motif": False,
                 "sim_biguanide_tversky": None,
@@ -289,37 +370,59 @@ def score_biguanide_like(smiles_list, refs=MCI_REFS, alpha=0.7, beta=0.3):
             })
             continue
 
-        has_core = patt_biguanide and m.HasSubstructMatch(patt_biguanide)
-        has_motif = patt_biguanide_motif and m.HasSubstructMatch(patt_biguanide_motif)
+        # Tautomer-aware substructure checks
+        has_core = tautomer_submatch(core_mol, m)
+        has_motif = tautomer_submatch(motif_mol, m)
 
+        # Similarities
         fp = ecfp4_count_fp(m)
+        sim_t = round(tversky(fp, biguanide_fp), 3) if (fp is not None and biguanide_fp is not None) else None
+        sim_d = round(dice(fp, biguanide_fp), 3) if (fp is not None and biguanide_fp is not None) else None
 
-        sim_t = round(tversky(fp, ref_fps["biguanide"]), 3)
-        sim_d = round(dice(fp, ref_fps["biguanide"]), 3)
-
-        t_vals = {name: tversky(fp, rfp) for name, rfp in ref_fps.items()}
-        d_vals = {name: dice(fp, rfp) for name, rfp in ref_fps.items()}
-        best_t = max(t_vals, key=t_vals.get)
-        best_d = max(d_vals, key=d_vals.get)
+        if ref_fps and fp is not None:
+            t_vals = {name: tversky(fp, rfp) for name, rfp in ref_fps.items()}
+            d_vals = {name: dice(fp, rfp) for name, rfp in ref_fps.items()}
+            best_t = max(t_vals, key=t_vals.get)
+            best_d = max(d_vals, key=d_vals.get)
+            best_biguanide_like_tversky = round(float(t_vals[best_t]), 3)
+            best_biguanide_like_dice = round(float(d_vals[best_d]), 3)
+        else:
+            best_t = None
+            best_d = None
+            best_biguanide_like_tversky = None
+            best_biguanide_like_dice = None
 
         rows.append({
-            "smiles": smi,
+            "smiles": smi_val,
             "has_biguanide_core": bool(has_core),
             "has_biguanide_motif": bool(has_motif),
             "sim_biguanide_tversky": sim_t,
             "sim_biguanide_dice": sim_d,
-            "best_biguanide_like_tversky": round(t_vals[best_t], 3),
+            "best_biguanide_like_tversky": best_biguanide_like_tversky,
             "best_ref_name_tversky": best_t,
-            "best_biguanide_like_dice": round(d_vals[best_d], 3),
+            "best_biguanide_like_dice": best_biguanide_like_dice,
             "best_ref_name_dice": best_d
         })
 
     df = pd.DataFrame(rows)
-    df["_rank_key"] = df.apply(
-        lambda r: (0 if r["has_biguanide_core"] or r["has_biguanide_motif"] else 1,
-                   -(r["best_biguanide_like_tversky"] or -1)), axis=1)
-    df = df.sort_values("_rank_key").drop(columns=["_rank_key"]).reset_index(drop=True)
-    
+
+    def _rank_tuple(r):
+        has_match = bool(r["has_biguanide_core"] or r["has_biguanide_motif"])
+        best = r["best_biguanide_like_tversky"]
+        if isinstance(best, float) and math.isnan(best):
+            best = None
+        score = best if best is not None else -1
+        return (0 if has_match else 1, -float(score))
+
+    if not df.empty:
+        df["_rank_key"] = df.apply(_rank_tuple, axis=1)
+        if sort_by_rank:
+            df = df.sort_values("_rank_key").drop(columns=["_rank_key"]).reset_index(drop=True)
+        else:
+            df = df.drop(columns=["_rank_key"]).reset_index(drop=True)
+    else:
+        df = df.reset_index(drop=True)
+
     return df
 
 
@@ -473,7 +576,7 @@ stats = stats.sort_values(["pubmed_references", "compound"], ascending=[False, T
 ###############################################################################
 
 
-#targets = stats.loc[stats["confidence_pubmed"]!="very-low","compound"].unique().tolist()
+#targets = stats.loc[stats["confidence_pubmed"]=="high","compound"].unique().tolist()
 # take all compounds
 targets = stats["compound"].unique().tolist()
 
@@ -538,6 +641,20 @@ stats["SMILES"] = stats["compound"].map(smiles).fillna("")
 
 #
 stats = add_tanimoto_scores(stats)
+
+biguanide_scores = score_biguanide_like(stats["SMILES"].tolist(), sort_by_rank=False)
+if len(biguanide_scores) == len(stats):
+    stats = pd.concat(
+        [
+            stats.reset_index(drop=True),
+            biguanide_scores.drop(columns=["smiles"]).reset_index(drop=True),
+        ],
+        axis=1,
+    )
+else:
+    for col in biguanide_scores.columns:
+        if col != "smiles":
+            stats[col] = None
 
 # Keep SMILES as the final column in the exported table for readability
 if "SMILES" in stats.columns:

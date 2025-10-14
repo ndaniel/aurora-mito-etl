@@ -119,28 +119,24 @@ conditions of those data providers.
 ## Processed outputs
 
 The finalization script (`scripts/finalize_realease.py`) assembles the
-release artifacts under `data/processed/<date>/` and now augments the
-compound summary with cheminformatics cues:
+release artifacts under `data/processed/<date>/` and augments the
+compound summary with cheminformatics diagnostics:
 
-- Pulls SMILES strings via PubChem, with ChEMBL as a fallback.
-- Calculates extended-connectivity fingerprints (ECFP4/2048) with RDKit.
-- Derives per-compound Tanimoto metrics vs. the curated reference inhibitors.
-- Adds similarity-based confidence tiers alongside the LLM confidence labels.
-- Exports both TSV (for pipelines) and Excel (for analyst review) versions of the
-  aggregated summary.
+- Pulls SMILES strings via PubChem first, then falls back to ChEMBL.
+- Generates RDKit Morgan fingerprints (ECFP4/2048) for similarity scoring.
+- Assigns PubMed-driven confidence bins and complementary RDKit similarity labels.
+- Flags biguanide-like chemistry to spotlight core pharmacophore analogs.
+- Exports TSV artifacts for pipelines and Excel mirrors for analyst review.
 
 The primary table `all_mito_complex_I_inhibitors.txt` now includes:
-- `SMILES` – best available structure for downstream QSAR work.
-- `MaxSim_all` – highest Tanimoto score vs. known inhibitors.
-- `TopKMean_all` – mean Tanimoto over the top-k matches (default k=3).
-- `BestRef_name` – reference compound producing the max similarity.
-- `confidence_similarity` – qualitative label derived from the similarity
-  metrics (`high`, `medium`, `low`, `very-low`).
+- Core attributes: `compound`, `pubmed_references`, `known_status`, `confidence_pubmed`, `pubmed_ids`.
+- Similarity scores: `MaxSim_all`, `TopKMean_all`, `BestRef_name`, `confidence_similarity`.
+- Biguanide diagnostics: `has_biguanide_core`, `has_biguanide_motif`, `sim_biguanide_tversky`, `sim_biguanide_dice`, `best_biguanide_like_tversky`, `best_ref_name_tversky`, `best_biguanide_like_dice`, `best_ref_name_dice`.
+- Structural context: trailing `SMILES` column for downstream QSAR work.
 
 An Excel mirror (`all_mito_complex_I_inhibitors.xlsx`) is emitted alongside the
 TSV to simplify exploratory review.
 
 Refer to `etl/schema/DATA_DICTIONARY.md` for the full column reference.
-
 
 

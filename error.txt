@@ -1,0 +1,12 @@
+57/59 compounds: imatinib -> CC1=C(C=C(C=C1)NC(=O)C2=CC=C(C=C2)CN3CCN(CC3)C)NC4=NC=CC(=N4)C5=CN=CC=C5 - PubChem:SMILES - imatinib
+58/59 compounds: sevoflurane -> C(OC(C(F)(F)F)C(F)(F)F)F - PubChem:SMILES - sevoflurane
+59/59 compounds: sorafenib -> CNC(=O)C1=NC=CC(=C1)OC2=CC=C(C=C2)NC(=O)NC3=CC(=C(C=C3)Cl)C(F)(F)F - PubChem:SMILES - sorafenib
+Traceback (most recent call last):
+  File "/projects/106--aurora-mito-etl/scripts/./finalize_realease.py", line 641, in <module>
+    biguanide_scores = score_biguanide_like(stats["SMILES"].tolist(), sort_by_rank=False)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/projects/106--aurora-mito-etl/scripts/./finalize_realease.py", line 267, in score_biguanide_like
+    te = rdMolStandardize.TautomerEnumerator()
+         ^^^^^^^^^^^^^^^^
+NameError: name 'rdMolStandardize' is not defined
+
