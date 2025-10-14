@@ -12,6 +12,7 @@ Buformin
 Bullatacin
 Bupivacaine
 Capsaicin
+Chlorhexidine
 Curcumin
 Deguelin
 Epigallocatechin
@@ -23,8 +24,8 @@ Galegine
 Gossypol
 Honokiol
 IACS-010759
-IACS-10759
 IACS010759
+IACS-10759
 Isopetasin
 Licochalcone
 Mangostin
@@ -37,6 +38,7 @@ Petasin
 Phenformin
 Phenothiazines
 Piericidin
+Proguanil
 Pyridaben
 Resveratrol
 Rolliniastatin

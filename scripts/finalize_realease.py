@@ -22,8 +22,8 @@ from pathlib import Path
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, inchi
-from rdkit.Chem import AllChem, inchi
 from rdkit.Chem import rdFingerprintGenerator as rfg
+from rdkit.Chem.rdmolops import RemoveHs
 
 
 
@@ -33,7 +33,17 @@ from rdkit.Chem import rdFingerprintGenerator as rfg
 ROOT = Path(__file__).resolve().parents[1]
 STAGING_GPT = ROOT / "data" / "staging" / "pubmed_gpt.txt"
 REF_INHIBITORS = ROOT / "data" / "reference" / "mitochondrial_complex_i_inhibitors.txt"
+BLACKLIST = ROOT / "data" / "reference" / "blacklist.txt"
 PROCESSED_DIR = ROOT / "data" / "processed"
+
+MCI_REFS = {
+    "biguanide": "NC(=N)NC(=N)N",
+    "metformin": "CN(C)C(=N)NC(=N)N",
+    "phenformin": "N=C(N)NC(=N)NCCc1ccccc1",
+    "buformin": "CCCCN=C(N)N=C(N)N", 
+    "biguanide_motif": "N=C(N)NC(=N)NCCCCCCNC(=N)NC(=N)N",
+    "proguanil": "CC(C)NC(=N)NC(=N)Nc1ccc(Cl)cc1"
+}
 
 # --------------------------------------------------------------------------
 # Helpers: checksum + provenance appender
@@ -195,7 +205,128 @@ def add_tanimoto_scores(df: pd.DataFrame, fp_radius=2, nbits=2048, topk=3) -> pd
 
     return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
     
-    
+# pip install rdkit-pypi pandas
+import pandas as pd
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem
+from rdkit.Chem.rdmolops import RemoveHs
+
+MCI_REFS = {
+    "biguanide": "NC(=N)NC(=N)N",
+    "metformin": "CN(C)C(=N)NC(=N)N",
+    "phenformin": "N=C(N)NC(=N)NCCc1ccccc1",
+    "buformin": "CCCCN=C(N)N=C(N)N",
+    "biguanide_motif": "N=C(N)NC(=N)NCCCCCCNC(=N)NC(=N)N",
+    "proguanil": "CC(C)NC(=N)NC(=N)Nc1ccc(Cl)cc1"
+}
+
+def score_biguanide_like(smiles_list, refs=MCI_REFS, alpha=0.7, beta=0.3):
+    """
+    Given a list of SMILES, return a DataFrame with:
+      - biguanide/biguanide_motif substructure flags
+      - similarity vs 'biguanide' (Tversky/Dice)
+      - best similarity across all refs (Tversky/Dice) + which ref matched
+      - ranked by substructure hit and Tversky score
+    """
+    def largest_fragment_smiles(smiles: str):
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if not mol:
+                return None
+            frags = Chem.GetMolFrags(mol, asMols=True, sanitizeFrags=True)
+            if not frags:
+                return None
+            frag = max(frags, key=lambda m: m.GetNumHeavyAtoms())
+            return Chem.MolToSmiles(frag, isomericSmiles=True)
+        except Exception:
+            return None
+
+    def mol_from_smiles(smi: str):
+        if not smi:
+            return None
+        smi2 = largest_fragment_smiles(smi)
+        if not smi2:
+            return None
+        m = Chem.MolFromSmiles(smi2)
+        if not m:
+            return None
+        try:
+            Chem.SanitizeMol(m)
+        except Exception:
+            return None
+        return RemoveHs(m)
+
+    def ecfp4_count_fp(mol):
+        return AllChem.GetMorganFingerprint(mol, radius=2)  # count-based fingerprint
+
+    def tversky(fp_a, fp_b):
+        return DataStructs.TverskySimilarity(fp_a, fp_b, alpha=alpha, beta=beta)
+
+    def dice(fp_a, fp_b):
+        return DataStructs.DiceSimilarity(fp_a, fp_b)
+
+    # prepare reference molecules/fingerprints
+    ref_mols = {name: mol_from_smiles(smi) for name, smi in refs.items()}
+    ref_fps  = {name: ecfp4_count_fp(m) for name, m in ref_mols.items() if m is not None}
+
+    patt_biguanide = Chem.MolFromSmarts(refs.get("biguanide")) if "biguanide" in refs else None
+    patt_biguanide_motif = Chem.MolFromSmarts(refs.get("biguanide_motif")) if "biguanide_motif" in refs else None
+
+    rows = []
+    for smi in smiles_list:
+        m = mol_from_smiles(smi)
+        if m is None:
+            rows.append({
+                "smiles": smi,
+                "has_biguanide_core": False,
+                "has_biguanide_motif": False,
+                "sim_biguanide_tversky": None,
+                "sim_biguanide_dice": None,
+                "best_biguanide_like_tversky": None,
+                "best_ref_name_tversky": None,
+                "best_biguanide_like_dice": None,
+                "best_ref_name_dice": None
+            })
+            continue
+
+        has_core = patt_biguanide and m.HasSubstructMatch(patt_biguanide)
+        has_motif = patt_biguanide_motif and m.HasSubstructMatch(patt_biguanide_motif)
+
+        fp = ecfp4_count_fp(m)
+
+        sim_t = round(tversky(fp, ref_fps["biguanide"]), 3)
+        sim_d = round(dice(fp, ref_fps["biguanide"]), 3)
+
+        t_vals = {name: tversky(fp, rfp) for name, rfp in ref_fps.items()}
+        d_vals = {name: dice(fp, rfp) for name, rfp in ref_fps.items()}
+        best_t = max(t_vals, key=t_vals.get)
+        best_d = max(d_vals, key=d_vals.get)
+
+        rows.append({
+            "smiles": smi,
+            "has_biguanide_core": bool(has_core),
+            "has_biguanide_motif": bool(has_motif),
+            "sim_biguanide_tversky": sim_t,
+            "sim_biguanide_dice": sim_d,
+            "best_biguanide_like_tversky": round(t_vals[best_t], 3),
+            "best_ref_name_tversky": best_t,
+            "best_biguanide_like_dice": round(d_vals[best_d], 3),
+            "best_ref_name_dice": best_d
+        })
+
+    df = pd.DataFrame(rows)
+    df["_rank_key"] = df.apply(
+        lambda r: (0 if r["has_biguanide_core"] or r["has_biguanide_motif"] else 1,
+                   -(r["best_biguanide_like_tversky"] or -1)), axis=1)
+    df = df.sort_values("_rank_key").drop(columns=["_rank_key"]).reset_index(drop=True)
+    return df
+
+
+# --- Example usage ---
+# smiles_list = ["NC(=N)NC(=N)N", "CN(C)C(=N)NC(=N)N", "CCCN=C(N)N=C(N)N", "CC(C)NC(=N)NC(=N)Nc1ccc(Cl)cc1"]
+# df = score_biguanide_like(smiles_list)
+# print(df)
+
     
     
 # --------------------------------------------------------------------------
@@ -212,8 +343,14 @@ print("[INFO] Reading known complex I inhibitors.")
 ref = []
 with open(REF_INHIBITORS, "r", encoding="utf-8") as f:
     ref = sorted(set([e.strip() for e in f if e.strip()]))
-    
 black_ref = set([e.strip().lower() for e in ref if e.strip()])
+
+blacklist = []
+with open(BLACKLIST, "r", encoding="utf-8") as f:
+    blacklist = sorted(set([e.lower().strip() for e in f if e.strip()]))
+
+blacklist = set(blacklist)
+blacklist.update(black_ref)
 
 # --------------------------------------------------------------------------
 # Deduplicate known reference compounds (normalize: remove spaces/dashes, lowercase)
@@ -254,6 +391,7 @@ def openparanthese(s: str) -> str:
 
 print("[INFO] Reading newly found complex I inhibitors from PubMed.")
 inh = []
+print("BLACKLSIT ->",sorted(blacklist))
 with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [e.rstrip("\r\n").split("\t") for e in f if e.rstrip("\r\n")]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
@@ -267,11 +405,9 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
             r.extend(t)
     inh = r[:]
     inh = [(e[0],e[1],openparanthese(e[2])) for e in inh if e[2].strip()]
-    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254")) for e in inh if e[2].strip()]
+    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254").replace("annonaceous acetogenin","acetogenin").replace("deltalac-acetogenin","acetogenin")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
-    blacklist=set(["zinc","complex i","complex 1","complex i blockers","complex i blocker","complex i inhibitor","complex i inhibitors","iron","compound","components of cigarette smoke","hepatitis c virus","roterone","ozone","calcium","no small-molecule compound named","SiO2 nanoparticles","crude oil","derivatives","dispersed oil","extensively oxidized low-density lipoprotein","fatty acids","hydrogen gas","inhibitor derived from nadh","inorganic arsenic","lithium","methane","nickel ion","nitrate","vehicle of sandimmun","camel milk exosomes","acidic buffer","mir-27a-3p","fish oil","cadmium","arsenic trioxide","chromium","hexavalent chromium","rotenone","iacs-10759"])
-    blacklist.update(black_ref)
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
     inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and not e[2].lower().startswith("compound")]
 
