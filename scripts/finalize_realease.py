@@ -495,7 +495,7 @@ def fetch_smiles(name: str, normalize : bool = True):
     # --- PubChem ---
     try:
         url = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{encoded}/property/IsomericSMILES,CanonicalSMILES,SMILES,ConnectivitySMILES,InChIKey/JSON")
-        r = requests.get(url, timeout=20)
+        r = requests.get(url, timeout=30,headers={"Accept":"application/json"})
         if r.ok:
             props = r.json()["PropertyTable"]["Properties"][0]
             smi, which = _first_smiles(props)
@@ -506,8 +506,8 @@ def fetch_smiles(name: str, normalize : bool = True):
 
     # --- ChEMBL fallback ---
     try:
-        url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/search?q={encoded}&format=json"
-        r = requests.get(url, timeout=20)
+        url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/search?q={encoded}&format=json&limit=1"
+        r = requests.get(url, timeout=30,headers={"Accept":"application/json"})
         if r.status_code == 200:
             data = r.json()
             if data.get("molecules"):
