@@ -39,6 +39,7 @@ STAGING_GPT = ROOT / "data" / "staging" / "pubmed_gpt.txt"
 REF_INHIBITORS = ROOT / "data" / "reference" / "mitochondrial_complex_i_inhibitors.txt"
 BLACKLIST = ROOT / "data" / "reference" / "blacklist.txt"
 TYPOS = ROOT / "data" / "reference" / "typos.txt"
+SMILES = ROOT / "data" / "reference" / "smiles.txt"
 PROCESSED_DIR = ROOT / "data" / "processed"
 
 MCI_REFS = {
@@ -502,6 +503,14 @@ def fix_typos(x):
         y = y.replace(e[0],e[1])
     return y
 
+
+print("[INFO] Reading internal SMILES database.")
+smiles_db = {}
+smiles_db_lower = {}
+with open(SMILES, "r", encoding="utf-8") as f:
+    smiles_db = dict([e.rstrip("\r\n").split("\t") for e in f if e.strip()])
+    smiles_db_lower = [(k.lower().strip(),v) for k,v in smiles_db]
+
 # --------------------------------------------------------------------------
 # Deduplicate known reference compounds (normalize: remove spaces/dashes, lowercase)
 # --------------------------------------------------------------------------
@@ -674,11 +683,15 @@ i = 0
 n = len(targets)
 for t in targets:
     i = i + 1
-    smi, source, query = fetch_smiles(t)
+    smi, source, query = (smiles_db.get(t,None), "internal", t)
     if not smi:
-        # try one more time
-        time.sleep(1)
-        smi, source, query = fetch_smiles(t,normalize=False)          
+        smi, source, query = (smiles_db_lower.get(t.strip().lower(),None), "internal", t.lower().strip())
+    if not smi:
+        smi, source, query = fetch_smiles(t)
+        if not smi:
+            # try one more time
+            time.sleep(1)
+            smi, source, query = fetch_smiles(t,normalize=False)          
     if smi:
         smi = canonic(smi)
     print(f"{i}/{n} compounds: {t} -> {smi} - {source} - {query}")  
