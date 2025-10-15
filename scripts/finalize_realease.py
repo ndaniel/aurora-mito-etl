@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGING_GPT = ROOT / "data" / "staging" / "pubmed_gpt.txt"
 REF_INHIBITORS = ROOT / "data" / "reference" / "mitochondrial_complex_i_inhibitors.txt"
 BLACKLIST = ROOT / "data" / "reference" / "blacklist.txt"
+TYPOS = ROOT / "data" / "reference" / "typos.txt"
 PROCESSED_DIR = ROOT / "data" / "processed"
 
 MCI_REFS = {
@@ -449,6 +450,7 @@ with open(REF_INHIBITORS, "r", encoding="utf-8") as f:
     ref = sorted(set([e.strip() for e in f if e.strip()]))
 black_ref = set([e.strip().lower() for e in ref if e.strip()])
 
+print("[INFO] Reading blacklist.")
 blacklist = []
 blacklist2 = []
 with open(BLACKLIST, "r", encoding="utf-8") as f:
@@ -465,6 +467,17 @@ def black2(x):
             f = True
             break
     return f
+
+print("[INFO] Reading typos list.")
+typos = []
+with open(TYPOS, "r", encoding="utf-8") as f:
+    typos = [e.lower().rstrip("\r\n").split("\t") for e in f if e.strip()]
+    
+def fix_typos(x):
+    y = x
+    for e in typos:
+        y = y.replace(e[0],e[1])
+    return y
 
 # --------------------------------------------------------------------------
 # Deduplicate known reference compounds (normalize: remove spaces/dashes, lowercase)
@@ -519,7 +532,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
             r.extend(t)
     inh = r[:]
     inh = [(e[0],e[1],openparanthese(e[2])) for e in inh if e[2].strip()]
-    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254").replace("annonaceous acetogenin","acetogenin").replace("deltalac-acetogenin","acetogenin").replace("tert-butylhydroperoxide","tert-butyl hydroperoxide").replace("malondialdehyde","malonaldehyde").replace("amphotericin B-deoxycholate","amphotericin B")) for e in inh if e[2].strip()]
+    inh = [(e[0],e[1],fix_typos(e[2])) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
