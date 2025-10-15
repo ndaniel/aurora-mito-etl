@@ -1,3 +1,4 @@
+arsenic
 acidic buffer
 arsenic trioxide
 cadmium
@@ -41,4 +42,12 @@ SiO2 nanoparticles
 vehicle of sandimmun
 zinc
 ethanol
+mao-b mediated h2o2
+hno
+licl
+antimony
+cobalt chloride
+fluoride
+formaldehyde
+cucl2
 

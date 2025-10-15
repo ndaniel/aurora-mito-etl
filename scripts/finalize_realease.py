@@ -509,7 +509,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
             r.extend(t)
     inh = r[:]
     inh = [(e[0],e[1],openparanthese(e[2])) for e in inh if e[2].strip()]
-    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254").replace("annonaceous acetogenin","acetogenin").replace("deltalac-acetogenin","acetogenin")) for e in inh if e[2].strip()]
+    inh = [(e[0],e[1],e[2].replace("analogs","").replace("analogue","").replace("analog","").replace("diphenyleneiodonium","diphenylene iodonium").replace("acetogenins","acetogenin").replace("aroclor 1254","aroclor-1254").replace("annonaceous acetogenin","acetogenin").replace("deltalac-acetogenin","acetogenin").replace("tert-butylhydroperoxide","tert-butyl hydroperoxide").replace("malondialdehyde","malonaldehyde").replace("amphotericin B-deoxycholate","amphotericin B")) for e in inh if e[2].strip()]
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
