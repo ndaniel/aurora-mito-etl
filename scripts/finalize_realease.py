@@ -20,7 +20,7 @@ import requests
 import math
 from pathlib import Path
 
-from rdkit import Chem, DataStructs
+from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import AllChem, inchi
 try:
     from rdkit.Chem import rdMolStandardize  # RDKit >= 2022.03
@@ -226,7 +226,27 @@ def add_tanimoto_scores(df: pd.DataFrame, fp_radius=2, nbits=2048, topk=3) -> pd
     return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
     
     
-
+RDLogger.DisableLog('rdApp.*') # silence noisy parse warnings
+_normalizer   = rdMolStandardize.Normalizer()
+_uncharger    = rdMolStandardize.Uncharger()
+_tautomerizer = rdMolStandardize.TautomerEnumerator()
+def canonic(s: str):
+    """Return canonical non-isomeric SMILES or None if invalid."""
+    if not isinstance(s, str) or not s.strip():
+        return None
+    try:
+        mol = Chem.MolFromSmiles(s)  # sanitize=True by default
+        if mol is None:
+            return None
+        # standard cleanup pipeline: normalize, uncharge, (optional) canonical tautomer
+        mol = rdMolStandardize.Cleanup(mol)
+        mol = _normalizer.normalize(mol)
+        mol = _uncharger.uncharge(mol)
+        mol = _tautomerizer.Canonicalize(mol)
+        return Chem.MolToSmiles(mol, isomericSmiles=False)
+    except Exception:
+        return None
+        
 MCI_REFS = {
     "biguanide": "NC(=N)NC(=N)N",
     "metformin": "CN(C)C(=N)NC(=N)N",
@@ -235,6 +255,9 @@ MCI_REFS = {
     "biguanide_motif": "N=C(N)NC(=N)NCCCCCCNC(=N)NC(=N)N",
     "proguanil": "CC(C)NC(=N)NC(=N)Nc1ccc(Cl)cc1"
 }
+
+MCI_REFS = dict((k,canonic(v)) for k,v in MCI_REFS.items())
+print(MCI_REFS)
 
 def _make_morgan_count_gen(radius=2):
     """
@@ -656,6 +679,8 @@ for t in targets:
         # try one more time
         time.sleep(1)
         smi, source, query = fetch_smiles(t,normalize=False)          
+    if smi:
+        smi = canonic(smi)
     print(f"{i}/{n} compounds: {t} -> {smi} - {source} - {query}")  
     smiles[t] = smi
     time.sleep(1)
