@@ -450,11 +450,21 @@ with open(REF_INHIBITORS, "r", encoding="utf-8") as f:
 black_ref = set([e.strip().lower() for e in ref if e.strip()])
 
 blacklist = []
+blacklist2 = []
 with open(BLACKLIST, "r", encoding="utf-8") as f:
     blacklist = sorted(set([e.lower().strip() for e in f if e.strip()]))
 
-blacklist = set(blacklist)
+blacklist2 = sorted(set([e.replace("*","") for e in blacklist if e.startswith("*")]))
+blacklist = set([e for e in blacklist if not e.startswith("*")])
 blacklist.update(black_ref)
+
+def black2(x):
+    f = False
+    for e in blacklist2:
+        if x.find(e)!=-1:
+            f = True
+            break
+    return f
 
 # --------------------------------------------------------------------------
 # Deduplicate known reference compounds (normalize: remove spaces/dashes, lowercase)
@@ -513,7 +523,7 @@ with open(STAGING_GPT, "r", encoding="utf-8") as f:
     inh = [(e[0],e[1],e[2].strip()) for e in inh if e[2].strip()]
     inh = [e for e in inh if e[1] and e[1].lower() != "no" and e[2] and e[2].lower() != "na"]
     inh = [e for e in inh if len(e[2]) > 2 and e[2].lower() not in blacklist]
-    inh = [e for e in inh if e[2].lower()!="no" and e[2].lower().find("nitric oxide")==-1 and e[2].lower().find("mitochondr")==-1 and e[2].lower().find("silencing")==-1 and (not e[2].lower().startswith("compound")) and e[2].lower().find("nanoparticle")==-1 ]
+    inh = [e for e in inh if not black2(e[2].lower()) ]
 
 # some statistics
 df = pd.DataFrame(inh, columns=["pmid", "confidence", "compound"])

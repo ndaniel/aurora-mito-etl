@@ -1,0 +1,12 @@
+analogs	
+analogue	
+analog	
+diphenyleneiodonium	diphenylene iodonium
+acetogenins	acetogenin
+aroclor 1254	aroclor-1254
+annonaceous acetogenin	acetogenin
+deltalac-acetogenin	acetogenin
+tert-butylhydroperoxide	tert-butyl hydroperoxide
+malondialdehyde	malonaldehyde
+amphotericin B-deoxycholate	amphotericin B
+
